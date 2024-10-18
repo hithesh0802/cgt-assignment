@@ -1,90 +1,136 @@
 #include <iostream>
 #include <vector>
-#include <cstring>
 #include <algorithm>
+#include <limits.h>
+#include <queue>
+#include <cstring>
 using namespace std;
 
-const int N = 100005;
+#define INF INT_MAX
 
-vector<int> adj[N]; // Adjacency list
-bool visited[N]; // Visited array
+// Function to perform BFS and find an augmenting path in the residual graph
+bool bfs(vector<vector<int>>& residualGraph, int source, int sink, vector<int>& parent) {
+    int n = residualGraph.size();
+    vector<bool> visited(n, false);
+    queue<int> q;
+    q.push(source);
+    visited[source] = true;
+    parent[source] = -1;
 
-// Function to perform DFS traversal
-void DFS(int u) {
-    visited[u] = true;
-    for (int v : adj[u]) {
-        if (!visited[v]) {
-            DFS(v);
+    while (!q.empty()) {
+        int u = q.front();
+        q.pop();
+
+        for (int v = 0; v < n; v++) {
+            if (!visited[v] && residualGraph[u][v] > 0) {
+                q.push(v);
+                parent[v] = u;
+                visited[v] = true;
+                if (v == sink) {
+                    return true;
+                }
+            }
         }
     }
+    return false;
 }
 
-// Function to check if the graph is K-connected
-bool isKConnected(int n, int K) {
-    if (K < 1 || K >= n) {
-        return false; // Invalid K values
+// Function to find the maximum flow using Ford-Fulkerson method
+int fordFulkerson(vector<vector<int>>& graph, int source, int sink) {
+    int u, v;
+    int n = graph.size();
+    vector<vector<int>> residualGraph = graph;
+    vector<int> parent(n);
+    int maxFlow = 0;
+
+    while (bfs(residualGraph, source, sink, parent)) {
+        int pathFlow = INF;
+        for (v = sink; v != source; v = parent[v]) {
+            u = parent[v];
+            pathFlow = min(pathFlow, residualGraph[u][v]);
+        }
+
+        for (v = sink; v != source; v = parent[v]) {
+            u = parent[v];
+            residualGraph[u][v] -= pathFlow;
+            residualGraph[v][u] += pathFlow;
+        }
+
+        maxFlow += pathFlow;
     }
 
-    // Check connectivity after removing up to K-1 vertices
+    return maxFlow;
+}
+
+// Function to find the edge connectivity of the graph
+int edgeConnectivity(vector<vector<int>>& graph) {
+    int n = graph.size();
+    int minCut = INF;
+
+    for (int i = 1; i < n; i++) {
+        minCut = min(minCut, fordFulkerson(graph, 0, i));
+    }
+
+    return minCut;
+}
+
+// Function to find vertex connectivity using Menger's theorem
+int vertexConnectivity(vector<vector<int>>& graph) {
+    int n = graph.size();
+    int minVertexCut = INF;
+
     for (int u = 0; u < n; u++) {
-        // Clear the visited array for new DFS
-        memset(visited, false, sizeof(visited));
-        
-        // Mark the current vertex as removed
-        vector<bool> removed(n, false);
-        removed[u] = true;
+        for (int v = u + 1; v < n; v++) {
+            // Create a modified graph where each vertex is split into two connected by an edge of capacity 1
+            vector<vector<int>> modifiedGraph(2 * n, vector<int>(2 * n, 0));
 
-        // Start DFS from the first non-removed vertex
-        int startVertex = -1;
-        for (int i = 0; i < n; i++) {
-            if (!removed[i]) {
-                startVertex = i;
-                break; // Found a vertex to start DFS
+            for (int i = 0; i < n; i++) {
+                modifiedGraph[i][i + n] = 1; // split vertices with a capacity of 1
             }
-        }
 
-        if (startVertex == -1) {
-            continue; // All vertices are removed
-        }
-
-        // Perform DFS to see how many vertices are reachable
-        DFS(startVertex);
-        
-        // Count the number of reachable vertices
-        int countReachable = 0;
-        for (int i = 0; i < n; i++) {
-            if (!removed[i] && visited[i]) {
-                countReachable++;
+            for (int i = 0; i < n; i++) {
+                for (int j = 0; j < n; j++) {
+                    if (graph[i][j] > 0) {
+                        modifiedGraph[i + n][j] = graph[i][j];
+                    }
+                }
             }
-        }
 
-        // If the number of reachable vertices is less than n - (K - 1),
-        // the graph is not K-connected
-        if (countReachable < (n - K)) {
-            return false; // Not K-connected
+            // Find minimum cut in this modified graph
+            int cutValue = fordFulkerson(modifiedGraph, u + n, v);
+            minVertexCut = min(minVertexCut, cutValue);
         }
     }
 
-    return true; // The graph is K-connected
+    return minVertexCut;
+}
+
+// Function to find the value of K for which the graph is K-connected
+int findKConnectivity(int vertexConnectivity, int edgeConnectivity) {
+    return min(vertexConnectivity, edgeConnectivity);
 }
 
 int main() {
-    int n = 5; // Number of vertices
-    // Example edges for the graph
-    adj[0] = {1, 2}; // 0 is connected to 1 and 2
-    adj[1] = {0, 2, 3}; // 1 is connected to 0, 2, and 3
-    adj[2] = {0, 1, 3, 4}; // 2 is connected to 0, 1, 3, and 4
-    adj[3] = {1, 2, 4}; // 3 is connected to 1, 2, and 4
-    adj[4] = {2, 3}; // 4 is connected to 2 and 3
+    int n;
+    cout << "Enter the number of vertices: ";
+    cin >> n;
 
-    // Check for K-connectivity for K = 1, 2, and 3
-    for (int K = 1; K <= 3; K++) {
-        if (isKConnected(n, K)) {
-            cout << "The graph is " << K << "-connected." << endl;
-        } else {
-            cout << "The graph is not " << K << "-connected." << endl;
+    vector<vector<int>> graph(n, vector<int>(n, 0));
+
+    cout << "Enter the weighted adjacency matrix (enter 0 for no edge):\n";
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            cin >> graph[i][j];
         }
     }
+
+    int edgeConn = edgeConnectivity(graph);
+    int vertexConn = vertexConnectivity(graph);
+    int kConnected = findKConnectivity(vertexConn, edgeConn);
+
+    cout << "\nEdge Connectivity of the graph: " << edgeConn << endl;
+    cout << "Vertex Connectivity of the graph: " << vertexConn << endl;
+    cout << "The graph is " << kConnected << "-connected." << endl;
 
     return 0;
 }
